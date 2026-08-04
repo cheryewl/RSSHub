@@ -1,35 +1,35 @@
-import { type Data, type DataItem, type Route, ViewType } from '@/types';
+import type { Cheerio, CheerioAPI } from 'cheerio';
+import { load } from 'cheerio';
+import type { Element } from 'domhandler';
+import type { Context } from 'hono';
 
-import { art } from '@/utils/render';
+import type { Data, DataItem, Language, Route } from '@/types';
+import { ViewType } from '@/types';
 import cache from '@/utils/cache';
 import ofetch from '@/utils/ofetch';
 import { parseDate } from '@/utils/parse-date';
 
-import { type CheerioAPI, type Cheerio, type Element, load } from 'cheerio';
-import { type Context } from 'hono';
-import path from 'node:path';
+import { renderDescription } from './templates/description';
 
 export const handler = async (ctx: Context): Promise<Data> => {
     const { filter } = ctx.req.param();
-    const limit: number = Number.parseInt(ctx.req.query('limit') ?? '30', 10);
+    const limit = Number(ctx.req.query('limit') ?? '30');
 
-    const baseUrl: string = 'https://kpopping.com';
+    const baseUrl = 'https://kpopping.com';
     const targetUrl: string = new URL(`kpics${filter ? `/${filter}` : ''}`, baseUrl).href;
 
     const response = await ofetch(targetUrl);
     const $: CheerioAPI = load(response);
     const language = $('html').attr('lang') ?? 'en';
 
-    let items: DataItem[] = [];
-
-    items = $('div.pics div.matrix div.cell')
+    let items: DataItem[] = $('div.pics div.matrix div.cell')
         .slice(0, limit)
         .toArray()
-        .map((el): Element => {
+        .map((el) => {
             const $el: Cheerio<Element> = $(el);
 
             const title: string = $el.find('figcaption section').text();
-            const description: string = art(path.join(__dirname, 'templates/description.art'), {
+            const description: string = renderDescription({
                 images: $el.find('a.picture img').attr('src')
                     ? [
                           {
@@ -54,7 +54,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
                 },
                 image,
                 banner: image,
-                language,
+                language: language as Language,
             };
 
             return processedItem;
@@ -68,12 +68,12 @@ export const handler = async (ctx: Context): Promise<Data> => {
                 }
 
                 return cache.tryGet(item.link, async (): Promise<DataItem> => {
-                    const detailResponse = await ofetch(item.link);
+                    const detailResponse = await ofetch(item.link!);
                     const $$: CheerioAPI = load(detailResponse);
 
                     const title: string = $$('h1').contents().first().text();
-                    const description: string = art(path.join(__dirname, 'templates/description.art'), {
-                        description: $$('div.pics').first().html(),
+                    const description: string = renderDescription({
+                        description: $$('div.pics').first().html() ?? undefined,
                     });
                     const pubDateStr: string | undefined = $$('meta[property="article:published_time"]').attr('content');
                     const categoryEls: Element[] = $$('div.buttons a').toArray();
@@ -105,34 +105,33 @@ export const handler = async (ctx: Context): Promise<Data> => {
                         image,
                         banner: image,
                         updated: upDatedStr ? parseDate(upDatedStr) : item.updated,
-                        language,
+                        language: language as Language,
                     };
 
                     const mediaEls: Element[] = $$('div.pics').first().find('img').toArray();
-                    const medias: Record<string, Record<string, string>> = mediaEls.reduce((acc: Record<string, Record<string, string>>, mediaEl) => {
+                    const medias: Record<string, Record<string, string>> = {};
+                    let imageCount = 1;
+                    for (const mediaEl of mediaEls) {
                         const $$mediaEl: Cheerio<Element> = $$(mediaEl);
                         const url: string | undefined = $$mediaEl.attr('src') ? new URL($$mediaEl.attr('src') as string, baseUrl).href : undefined;
 
                         if (!url) {
-                            return acc;
+                            continue;
                         }
 
-                        const medium: string = 'image';
-                        const count: number = Object.values(acc).filter((m) => m.medium === medium).length + 1;
-                        const key: string = `${medium}${count}`;
+                        const medium = 'image';
+                        const key = `${medium}${imageCount++}`;
 
-                        acc[key] = {
+                        medias[key] = {
                             url,
                             medium,
                             title: $$mediaEl.attr('alt') || title,
                             description: $$mediaEl.attr('alt') || title,
                             thumbnail: url,
                         };
+                    }
 
-                        return acc;
-                    }, {});
-
-                    if (medias) {
+                    if (Object.keys(medias).length > 0) {
                         processedItem = {
                             ...processedItem,
                             media: medias,
@@ -156,7 +155,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
         allowEmpty: true,
         image: $('meta[property="og:image"]').attr('content'),
         author: $('meta[property="og:site_name"]').attr('content'),
-        language,
+        language: language as Language,
         id: targetUrl,
     };
 };
@@ -171,10 +170,9 @@ export const route: Route = {
     parameters: {
         filter: 'Filter',
     },
-    description: `:::tip
+    description: `::: tip
 If you subscribe to [All male photo albums](https://kpopping.com/kpics/gender-male/category-all/idol-any/group-any/order)，where the URL is \`https://kpopping.com/kpics/gender-male/category-all/idol-any/group-any/order\`, extract the part \`https://kpopping.com/kpics/\` to the end, which is \`gender-male/category-all/idol-any/group-any/order\`, and use it as the parameter to fill in. Therefore, the route will be [\`/kpopping/kpics/gender-male/category-all/idol-any/group-any/order\`](https://rsshub.app/kpopping/kpics/gender-male/category-all/idol-any/group-any/order).
-:::
-`,
+:::`,
     categories: ['picture'],
     features: {
         requireConfig: false,
@@ -207,9 +205,8 @@ If you subscribe to [All male photo albums](https://kpopping.com/kpics/gender-ma
         parameters: {
             filter: '筛选，可在对应分类页 URL 中找到',
         },
-        description: `:::tip
+        description: `::: tip
 若订阅 [All male photo albums](https://kpopping.com/kpics/gender-male/category-all/idol-any/group-any/order)，网址为 \`https://kpopping.com/kpics/gender-male/category-all/idol-any/group-any/order\`，请截取 \`https://kpopping.com/kpics/\` 到末尾的部分 \`gender-male/category-all/idol-any/group-any/order\` 作为 \`filter\` 参数填入，此时目标路由为 [\`/kpopping/kpics/gender-male/category-all/idol-any/group-any/order\`](https://rsshub.app/kpopping/kpics/gender-male/category-all/idol-any/group-any/order)。
-:::
-`,
+:::`,
     },
 };

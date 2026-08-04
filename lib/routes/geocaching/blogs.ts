@@ -1,4 +1,4 @@
-import { Route } from '@/types';
+import type { Route } from '@/types';
 import got from '@/utils/got';
 import { parseDate } from '@/utils/parse-date';
 
@@ -60,7 +60,7 @@ async function handler(ctx) {
 
     if (language === 'en') {
         searchParams.categories_exclude = Object.values(languageToCategory).join(',');
-    } else if (language in languageToCategory) {
+    } else if (Object.hasOwn(languageToCategory, language)) {
         searchParams.categories = languageToCategory[language];
     } else if (language === 'all') {
         // do nothing
@@ -74,7 +74,7 @@ async function handler(ctx) {
     const items = response.map((item) => {
         const media = item._embedded['wp:featuredmedia'][0];
         const mediaDetails = media?.media_details;
-        const mediaSize = mediaDetails.sizes.large || mediaDetails.sizes.full;
+        const mediaSize = mediaDetails?.sizes.large || mediaDetails?.sizes.full;
         return {
             title: item.title.rendered.trim(),
             link: item.link,
@@ -84,7 +84,7 @@ async function handler(ctx) {
             updated: parseDate(item.modified_gmt),
             author: item._embedded.author[0].name,
             category: item._embedded['wp:term'][0].map((category) => category.name.trim()),
-            media: media
+            media: mediaSize
                 ? {
                       content: {
                           url: media.source_url,
@@ -104,9 +104,9 @@ async function handler(ctx) {
     });
 
     return {
-        title: language in languageToLabel ? `Geocaching Blog - ${languageToLabel[language]}` : 'Geocaching Blog',
+        title: Object.hasOwn(languageToLabel, language) ? `Geocaching Blog - ${languageToLabel[language]}` : 'Geocaching Blog',
         link: `${baseUrl}/blog/`,
-        language: language in languageToCategory ? language : 'en',
+        language: Object.hasOwn(languageToCategory, language) ? language : 'en',
         image: 'https://i.ytimg.com/vi_webp/G28VxvBoSLQ/maxresdefault.webp',
         icon: `${baseUrl}/blog/favicon.ico`,
         logo: `${baseUrl}/blog/favicon.ico`,

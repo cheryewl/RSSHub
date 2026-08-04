@@ -1,29 +1,30 @@
-import { type Data, type DataItem, type Route, ViewType } from '@/types';
+import type { Cheerio, CheerioAPI } from 'cheerio';
+import { load } from 'cheerio';
+import type { Element } from 'domhandler';
+import type { Context } from 'hono';
 
+import type { Data, DataItem, Language, Route } from '@/types';
+import { ViewType } from '@/types';
+import cache from '@/utils/cache';
 import ofetch from '@/utils/ofetch';
 import { parseDate } from '@/utils/parse-date';
 import timezone from '@/utils/timezone';
 
-import { type CheerioAPI, type Cheerio, type Element, load } from 'cheerio';
-import { type Context } from 'hono';
-
 export const handler = async (ctx: Context): Promise<Data> => {
     const { category, id } = ctx.req.param();
-    const limit: number = Number.parseInt(ctx.req.query('limit') ?? '30', 10);
+    const limit = Number(ctx.req.query('limit') ?? '30');
 
-    const baseUrl: string = 'http://load.grainoil.com.cn';
+    const baseUrl = 'http://load.grainoil.com.cn';
     const targetUrl: string = new URL(`${category}/${id}.jspx`, baseUrl).href;
 
     const response = await ofetch(targetUrl);
     const $: CheerioAPI = load(response);
     const language = $('html').attr('lang') ?? 'zh-CN';
 
-    let items: DataItem[] = [];
-
-    items = $('div.m_listpagebox ol li a')
+    let items: DataItem[] = $('div.m_listpagebox ol li a')
         .slice(0, limit)
         .toArray()
-        .map((el): Element => {
+        .map((el) => {
             const $el: Cheerio<Element> = $(el);
 
             const title: string = $el.find('b').text();
@@ -33,10 +34,10 @@ export const handler = async (ctx: Context): Promise<Data> => {
 
             const processedItem: DataItem = {
                 title,
-                pubDate: pubDateStr ? timezone(parseDate(pubDateStr), +8) : undefined,
+                pubDate: pubDateStr ? timezone(parseDate(pubDateStr), 8) : undefined,
                 link: linkUrl,
-                updated: upDatedStr ? timezone(parseDate(upDatedStr), +8) : undefined,
-                language,
+                updated: upDatedStr ? timezone(parseDate(upDatedStr), 8) : undefined,
+                language: language as Language,
             };
 
             return processedItem;
@@ -50,11 +51,11 @@ export const handler = async (ctx: Context): Promise<Data> => {
                 }
 
                 return cache.tryGet(item.link, async (): Promise<DataItem> => {
-                    const detailResponse = await ofetch(item.link);
+                    const detailResponse = await ofetch(item.link!);
                     const $$: CheerioAPI = load(detailResponse);
 
                     const title: string = $$('div.m_tit h2').text();
-                    const description: string = $$('div.TRS_Editor').html() ?? '';
+                    const description = $$('div.TRS_Editor').html();
                     const authors: DataItem['author'] = $$('div.m_tit h2 a').first().text();
 
                     const processedItem: DataItem = {
@@ -65,7 +66,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
                             html: description,
                             text: description,
                         },
-                        language,
+                        language: language as Language,
                     };
 
                     return {
@@ -85,7 +86,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
         allowEmpty: true,
         image: $('div.top_logo img').attr('src') ? new URL($('div.top_logo img').attr('src') as string, baseUrl).href : undefined,
         author: $('meta[http-equiv="keywords"]').attr('content'),
-        language,
+        language: language as Language,
         id: targetUrl,
     };
 };
@@ -115,9 +116,8 @@ export const route: Route = {
             description: '分类 ID，可在对应分类页 URL 中找到',
         },
     },
-    description: `:::tip
+    description: `::: tip
 若订阅 [政务信息](http://load.grainoil.com.cn/newsListHome/1430.jspx)，网址为 \`http://load.grainoil.com.cn/newsListHome/1430.jspx\`，请截取 \`https://load.grainoil.com.cn/\` 到末尾 \`.jspx\` 的部分 \`newsListHome/1430\` 作为 \`category\` 和 \`id\`参数填入，此时目标路由为 [\`/grainoil/newsListHome/1430\`](https://rsshub.app/grainoil/newsListHome/1430)。
-
 :::
 
 <details>
@@ -135,8 +135,7 @@ export const route: Route = {
 | 统计资料 | newsListChannel/20 |
 | 综合信息 | newsListChannel/21 |
 
-</details>
-`,
+</details>`,
     categories: ['new-media'],
     features: {
         requireConfig: false,

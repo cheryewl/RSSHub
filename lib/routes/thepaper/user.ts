@@ -1,12 +1,13 @@
-import { Route } from '@/types';
-import * as cheerio from 'cheerio';
-import ofetch from '@/utils/ofetch';
+import { load } from 'cheerio';
+
+import type { DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
+import ofetch from '@/utils/ofetch';
 import { parseDate } from '@/utils/parse-date';
 
 export const route: Route = {
     path: '/user/:pphId',
-    categories: ['new-media', 'popular'],
+    categories: ['new-media'],
     example: '/thepaper/user/4221423',
     parameters: { pphId: '澎湃号 id，可在澎湃号页 URL 中找到' },
     name: '澎湃号',
@@ -109,7 +110,7 @@ async function handler(ctx) {
 
     const mobileBuildId = (await cache.tryGet('thepaper:m:buildId', async () => {
         const response = await ofetch('https://m.thepaper.cn');
-        const $ = cheerio.load(response);
+        const $ = load(response);
         const nextData = JSON.parse($('script#__NEXT_DATA__').text());
         return nextData.buildId;
     })) as string;
@@ -137,7 +138,7 @@ async function handler(ctx) {
         },
     });
 
-    const list = response.data.list.map((item) => ({
+    const list = response.data.list.map((item): DataItem & { contId: string } => ({
         title: item.name,
         link: `https://www.thepaper.cn/newsDetail_forward_${item.contId}`,
         pubDate: parseDate(item.pubTimeLong),
@@ -148,7 +149,7 @@ async function handler(ctx) {
 
     const items = await Promise.all(
         list.map((item) =>
-            cache.tryGet(item.link, async () => {
+            cache.tryGet(item.link!, async () => {
                 const response = await ofetch(`https://m.thepaper.cn/_next/data/${mobileBuildId}/detail/${item.contId}.json`, {
                     query: {
                         id: item.contId,
